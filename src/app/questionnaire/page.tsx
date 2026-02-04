@@ -86,11 +86,14 @@ export default function QuestionnairePage() {
   };
 
   // Section answers for checkpoint - answers dependency is intentional to update when user types
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const sectionAnswers = useMemo(() => {
-    if (!currentSection) return {};
-    return getAnswersForSection(currentSection.id, sections);
-  }, [currentSection, getAnswersForSection, answers]);
+  const sectionAnswers = useMemo(
+    () => {
+      if (!currentSection) return {};
+      return getAnswersForSection(currentSection.id, sections);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentSection, getAnswersForSection, answers]
+  );
 
   // Handle continue button
   const handleContinue = () => {
