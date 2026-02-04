@@ -283,7 +283,7 @@ export default function GateCheckpoint({
 
           {!result.passed && scorePercent >= checkpoint.passingThreshold * 100 && (
             <p className="text-xs text-slate-500 mt-2 text-center">
-              You met the minimum threshold but there's room for improvement.
+              You met the minimum threshold but there&apos;s room for improvement.
             </p>
           )}
         </>
