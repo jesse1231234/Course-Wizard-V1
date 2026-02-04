@@ -34,12 +34,12 @@ function generateManifest(course: GeneratedCourse): string {
       </item>`);
 
   // Process modules
-  for (const module of course.modules) {
-    const moduleId = `mod_${module.id}`;
+  for (const courseModule of course.modules) {
+    const moduleId = `mod_${courseModule.id}`;
 
     const moduleItems: string[] = [];
 
-    for (const item of module.items) {
+    for (const item of courseModule.items) {
       const itemId = `item_${item.id}`;
       const resourceId = `res_${item.id}`;
 
@@ -70,7 +70,7 @@ function generateManifest(course: GeneratedCourse): string {
 
     items.push(`
       <item identifier="${moduleId}">
-        <title>${escapeXml(module.name)}</title>
+        <title>${escapeXml(courseModule.name)}</title>
         ${moduleItems.join("")}
       </item>`);
   }
@@ -287,8 +287,8 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
   const quizzesFolder = zip.folder("quizzes");
 
   // Process modules and items
-  for (const module of course.modules) {
-    for (const item of module.items) {
+  for (const courseModule of course.modules) {
+    for (const item of courseModule.items) {
       switch (item.type) {
         case "page":
           zip.file(
