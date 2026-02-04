@@ -85,7 +85,8 @@ export default function QuestionnairePage() {
     return isValid;
   };
 
-  // Section answers for checkpoint
+  // Section answers for checkpoint - answers dependency is intentional to update when user types
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const sectionAnswers = useMemo(() => {
     if (!currentSection) return {};
     return getAnswersForSection(currentSection.id, sections);
