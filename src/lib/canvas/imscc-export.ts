@@ -451,7 +451,8 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
 
 function generateManifest(
   course: GeneratedCourse,
-  resources: Array<{ id: string; type: string; href: string; files: string[] }>
+  resources: Array<{ id: string; type: string; href: string; files: string[] }>,
+  itemRefs: Map<string, string>
 ): string {
   // Build organization items (modules and their items)
   let orgItems = "";
@@ -462,10 +463,10 @@ function generateManifest(
 
     for (const item of mod.items) {
       const itemId = `item_${mod.id}_${item.id}`;
-      const resource = resources.find((r) => r.id.includes(item.id));
+      const resourceId = itemRefs.get(item.id) || "";
 
       modItems += `
-          <item identifier="${itemId}" identifierref="${resource?.id || ""}">
+          <item identifier="${itemId}" identifierref="${resourceId}">
             <title>${escapeXml(item.title)}</title>
           </item>`;
     }
@@ -669,7 +670,7 @@ ${course.welcomeMessage || "<h1>Welcome to the Course!</h1><p>Get started by exp
   courseSettings?.file("canvas_export.txt", `Canvas course export\nGenerated: ${new Date().toISOString()}`);
 
   // Generate manifest
-  zip.file("imsmanifest.xml", generateManifest(course, resources));
+  zip.file("imsmanifest.xml", generateManifest(course, resources, itemRefs));
 
   // Generate the zip file
   return await zip.generateAsync({ type: "blob" });
