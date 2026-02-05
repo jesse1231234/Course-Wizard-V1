@@ -683,6 +683,22 @@ ${course.welcomeMessage || "<h1>Welcome to the Course!</h1><p>Get started by exp
   courseSettings?.file("course_settings.xml", generateCourseSettingsXml(course));
   courseSettings?.file("canvas_export.txt", `Canvas course export\nGenerated: ${new Date().toISOString()}`);
 
+  // Add course_settings resource - CRITICAL for Canvas to read module_meta.xml
+  // This tells Canvas where to find the Canvas-specific metadata files
+  const courseSettingsResourceId = generateId();
+  resources.unshift({
+    id: courseSettingsResourceId,
+    type: "associatedcontent/imscc_xmlv1p1/learning-application-resource",
+    href: "course_settings/canvas_export.txt",
+    files: [
+      "course_settings/course_settings.xml",
+      "course_settings/module_meta.xml",
+      "course_settings/assignment_groups.xml",
+      "course_settings/rubrics.xml",
+      "course_settings/canvas_export.txt",
+    ],
+  });
+
   // Generate manifest
   zip.file("imsmanifest.xml", generateManifest(course, resources, itemRefs));
 
