@@ -211,5 +211,11 @@ Generate a JSON object with this structure:
   ]
 }
 
-Generate complete, substantive content for each item. For pages, include full lesson content (500+ words). For assignments, include detailed instructions. For discussions, include engaging prompts with guiding questions. For quizzes, include 5-10 questions per module quiz.`;
+Generate complete, substantive content for each item:
+- For pages: Include clear lesson content (200-300 words) covering key concepts
+- For assignments: Include clear instructions and requirements
+- For discussions: Include engaging prompts with 2-3 guiding questions
+- For quizzes: Include 3-5 questions per quiz
+
+IMPORTANT: Keep the JSON response concise to avoid truncation. Focus on quality over quantity.`;
 }
