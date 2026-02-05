@@ -23,13 +23,14 @@ export async function POST(request: NextRequest) {
     const userPrompt = buildCanvasGenerationUserPrompt(answers);
 
     // Call LLM with higher token limit for course generation
-    // Using 16000 to allow for comprehensive course content
+    // Using 64000 to allow for comprehensive course content
+    // Azure GPT-4.1 supports up to 128K output tokens
     const course = await generateJSONResponse<GeneratedCourse>(
       [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      { temperature: 0.7, maxTokens: 16000 }
+      { temperature: 0.7, maxTokens: 64000 }
     );
 
     // Validate the response structure
