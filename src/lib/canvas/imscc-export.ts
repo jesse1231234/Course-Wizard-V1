@@ -451,7 +451,7 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
 
 function generateManifest(
   course: GeneratedCourse,
-  resources: Array<{ id: string; type: string; href: string; files: string[] }>,
+  resources: Array<{ id: string; type: string; href?: string; files: string[]; dependency?: string }>,
   itemRefs: Map<string, string>
 ): string {
   // Build organization items (modules and their items)
@@ -481,8 +481,10 @@ function generateManifest(
   const resourcesXml = resources
     .map((r) => {
       const files = r.files.map((f) => `\n      <file href="${f}"/>`).join("");
+      const hrefAttr = r.href ? ` href="${r.href}"` : "";
+      const deps = r.dependency ? `\n      <dependency identifierref="${r.dependency}"/>` : "";
       return `
-    <resource identifier="${r.id}" type="${r.type}" href="${r.href}">${files}
+    <resource identifier="${r.id}" type="${r.type}"${hrefAttr}>${files}${deps}
     </resource>`;
     })
     .join("");
@@ -532,7 +534,7 @@ function generateManifest(
 
 export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
   const zip = new JSZip();
-  const resources: Array<{ id: string; type: string; href: string; files: string[] }> = [];
+  const resources: Array<{ id: string; type: string; href?: string; files: string[]; dependency?: string }> = [];
   const itemRefs = new Map<string, string>();
 
   // Initialize context
@@ -580,14 +582,14 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
         }
 
         case "discussion": {
-          // Discussions are XML files at root level
+          // Discussions are XML files at root level - NO href attribute per Canvas format
           const discussionFile = `${resourceId}.xml`;
           zip.file(discussionFile, generateDiscussionTopicXml(item));
 
           resources.push({
             id: resourceId,
             type: "imsdt_xmlv1p1",
-            href: discussionFile,
+            // No href for discussions - Canvas format
             files: [discussionFile],
           });
           break;
@@ -602,13 +604,14 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
           assignmentFolder?.file("assignment_settings.xml", generateAssignmentSettingsXml(item, resourceId, ctx));
           assignmentFolder?.file(htmlFile, generateAssignmentHtml(item));
 
+          // Canvas format: href points to HTML content, HTML listed first
           resources.push({
             id: resourceId,
             type: "associatedcontent/imscc_xmlv1p1/learning-application-resource",
-            href: `${resourceId}/assignment_settings.xml`,
+            href: `${resourceId}/${htmlFile}`,
             files: [
-              `${resourceId}/assignment_settings.xml`,
               `${resourceId}/${htmlFile}`,
+              `${resourceId}/assignment_settings.xml`,
             ],
           });
           break;
@@ -617,18 +620,26 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
         case "quiz": {
           // Quizzes get their own folder
           const quizFolder = zip.folder(resourceId);
+          const metaResourceId = generateId();
 
           quizFolder?.file("assessment_meta.xml", generateQuizMetaXml(item, resourceId, ctx));
           quizFolder?.file("assessment_qti.xml", generateQuizQtiXml(item, resourceId));
 
+          // Canvas format: main quiz resource has no href, only QTI file
           resources.push({
             id: resourceId,
             type: "imsqti_xmlv1p2/imscc_xmlv1p1/assessment",
+            // No href for quiz resources - Canvas format
+            files: [`${resourceId}/assessment_qti.xml`],
+            dependency: metaResourceId,
+          });
+
+          // Separate resource for assessment_meta.xml
+          resources.push({
+            id: metaResourceId,
+            type: "associatedcontent/imscc_xmlv1p1/learning-application-resource",
             href: `${resourceId}/assessment_meta.xml`,
-            files: [
-              `${resourceId}/assessment_meta.xml`,
-              `${resourceId}/assessment_qti.xml`,
-            ],
+            files: [`${resourceId}/assessment_meta.xml`],
           });
           break;
         }
