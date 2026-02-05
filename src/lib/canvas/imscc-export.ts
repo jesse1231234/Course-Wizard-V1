@@ -267,27 +267,24 @@ ${item.content || "<p>Complete this assignment according to the guidelines provi
 // CLASSIC QUIZ GENERATORS
 // ============================================
 
+// Generate assessment_meta.xml - Canvas Classic Quiz format (matches actual Canvas export)
 function generateQuizMetaXml(
   item: CanvasModuleItem,
   resourceId: string,
   ctx: ExportContext
 ): string {
-  const points = item.points || (item.questions?.reduce((sum, q) => sum + (q.points || 0), 0)) || 10;
-  const questionCount = item.questions?.length || 0;
+  const points = item.points || (item.questions?.reduce((sum, q) => sum + (q.points || 1), 0)) || 4;
+  const pointsDecimal = Number.isInteger(points) ? `${points}.0` : points.toString();
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd" identifier="${resourceId}">
+<quiz identifier="${resourceId}" xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
   <title>${escapeXml(item.title)}</title>
-  <description>&lt;p&gt;Please answer the following ${questionCount} questions.&lt;/p&gt;</description>
-  <due_at/>
-  <lock_at/>
-  <unlock_at/>
-  <shuffle_questions>false</shuffle_questions>
-  <shuffle_answers>true</shuffle_answers>
+  <description>${escapeXml(item.content || "<p>Please answer the following questions.</p>")}</description>
+  <shuffle_answers>false</shuffle_answers>
   <scoring_policy>keep_highest</scoring_policy>
-  <hide_results/>
+  <hide_results></hide_results>
   <quiz_type>assignment</quiz_type>
-  <points_possible>${points}</points_possible>
+  <points_possible>${pointsDecimal}</points_possible>
   <require_lockdown_browser>false</require_lockdown_browser>
   <require_lockdown_browser_for_results>false</require_lockdown_browser_for_results>
   <require_lockdown_browser_monitor>false</require_lockdown_browser_monitor>
@@ -295,10 +292,11 @@ function generateQuizMetaXml(
   <show_correct_answers>true</show_correct_answers>
   <anonymous_submissions>false</anonymous_submissions>
   <could_be_locked>false</could_be_locked>
-  <allowed_attempts>2</allowed_attempts>
+  <disable_timer_autosubmission>false</disable_timer_autosubmission>
+  <allowed_attempts>1</allowed_attempts>
   <one_question_at_a_time>false</one_question_at_a_time>
   <cant_go_back>false</cant_go_back>
-  <available>true</available>
+  <available>false</available>
   <one_time_results>false</one_time_results>
   <show_correct_answers_last_attempt>false</show_correct_answers_last_attempt>
   <only_visible_to_overrides>false</only_visible_to_overrides>
@@ -309,16 +307,20 @@ function generateQuizMetaXml(
     <lock_at/>
     <unlock_at/>
     <module_locked>false</module_locked>
-    <workflow_state>published</workflow_state>
-    <assignment_overrides/>
+    <assignment_group_identifierref>${ctx.assignmentGroupId}</assignment_group_identifierref>
+    <workflow_state>unpublished</workflow_state>
+    <assignment_overrides>
+    </assignment_overrides>
     <quiz_identifierref>${resourceId}</quiz_identifierref>
-    <allowed_extensions/>
+    <allowed_extensions></allowed_extensions>
     <has_group_category>false</has_group_category>
-    <points_possible>${points}</points_possible>
+    <points_possible>${pointsDecimal}</points_possible>
     <grading_type>points</grading_type>
     <all_day>false</all_day>
     <submission_types>online_quiz</submission_types>
     <position>1</position>
+    <turnitin_enabled>false</turnitin_enabled>
+    <vericite_enabled>false</vericite_enabled>
     <peer_review_count>0</peer_review_count>
     <peer_reviews>false</peer_reviews>
     <automatic_peer_reviews>false</automatic_peer_reviews>
@@ -326,6 +328,8 @@ function generateQuizMetaXml(
     <grade_group_students_individually>false</grade_group_students_individually>
     <freeze_on_copy>false</freeze_on_copy>
     <omit_from_final_grade>false</omit_from_final_grade>
+    <hide_in_gradebook>false</hide_in_gradebook>
+    <intra_group_peer_reviews>false</intra_group_peer_reviews>
     <only_visible_to_overrides>false</only_visible_to_overrides>
     <post_to_sis>false</post_to_sis>
     <moderated_grading>false</moderated_grading>
@@ -338,101 +342,102 @@ function generateQuizMetaXml(
     <post_policy>
       <post_manually>false</post_manually>
     </post_policy>
-    <assignment_group_identifierref>${ctx.assignmentGroupId}</assignment_group_identifierref>
   </assignment>
+  <assignment_group_identifierref>${ctx.assignmentGroupId}</assignment_group_identifierref>
+  <assignment_overrides>
+  </assignment_overrides>
 </quiz>`;
 }
 
-function generateClassicQuizQtiXml(item: CanvasModuleItem, resourceId: string): string {
+// Generate CC-profile QTI for assessment_qti.xml (IMS Common Cartridge compatible)
+function generateCCProfileQtiXml(item: CanvasModuleItem, resourceId: string): string {
   const questions = item.questions || [];
 
-  const questionItems = questions.map((q, qIndex) => {
-    const questionId = `question_${qIndex + 1}`;
-    const points = q.points || 2;
+  const questionItems = questions.map((q) => {
+    const questionId = generateId();
 
     if (q.type === "multiple_choice" && q.answers) {
       const correctAnswer = q.answers.find((a) => a.correct);
-      const correctId = correctAnswer ? `ans_${q.answers.indexOf(correctAnswer)}` : "ans_0";
+      const correctIdx = correctAnswer ? q.answers.indexOf(correctAnswer) : 0;
 
       return `
-    <item ident="${questionId}" title="Question ${qIndex + 1}">
-      <itemmetadata>
-        <qtimetadata>
-          <qtimetadatafield>
-            <fieldlabel>question_type</fieldlabel>
-            <fieldentry>multiple_choice_question</fieldentry>
-          </qtimetadatafield>
-          <qtimetadatafield>
-            <fieldlabel>points_possible</fieldlabel>
-            <fieldentry>${points}</fieldentry>
-          </qtimetadatafield>
-        </qtimetadata>
-      </itemmetadata>
-      <presentation>
-        <material>
-          <mattext texttype="text/html">${escapeXml(q.text)}</mattext>
-        </material>
-        <response_lid ident="response1" rcardinality="Single">
-          <render_choice>
-            ${q.answers.map((a, aIndex) => `
-            <response_label ident="ans_${aIndex}">
-              <material>
-                <mattext texttype="text/plain">${escapeXml(a.text)}</mattext>
-              </material>
-            </response_label>`).join("")}
-          </render_choice>
-        </response_lid>
-      </presentation>
-      <resprocessing>
-        <outcomes>
-          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
-        </outcomes>
-        <respcondition continue="No">
-          <conditionvar>
-            <varequal respident="response1">${correctId}</varequal>
-          </conditionvar>
-          <setvar action="Set" varname="SCORE">100</setvar>
-        </respcondition>
-      </resprocessing>
-    </item>`;
+      <item ident="${questionId}" title="Question">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>cc_profile</fieldlabel>
+              <fieldentry>cc.multiple_choice.v0p1</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;div&gt;&lt;p&gt;${escapeXml(q.text)}&lt;/p&gt;&lt;/div&gt;</mattext>
+          </material>
+          <response_lid ident="response1" rcardinality="Single">
+            <render_choice>
+${q.answers.map((a, aIndex) => `              <response_label ident="${1000 + aIndex}">
+                <material>
+                  <mattext texttype="text/plain">${escapeXml(a.text)}</mattext>
+                </material>
+              </response_label>`).join("\n")}
+            </render_choice>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <varequal respident="response1">${1000 + correctIdx}</varequal>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
     }
 
-    // Short answer or essay question
-    const qType = q.type === "essay" ? "essay_question" : "short_answer_question";
+    // Essay question with cc_profile format
     return `
-    <item ident="${questionId}" title="Question ${qIndex + 1}">
-      <itemmetadata>
-        <qtimetadata>
-          <qtimetadatafield>
-            <fieldlabel>question_type</fieldlabel>
-            <fieldentry>${qType}</fieldentry>
-          </qtimetadatafield>
-          <qtimetadatafield>
-            <fieldlabel>points_possible</fieldlabel>
-            <fieldentry>${points}</fieldentry>
-          </qtimetadatafield>
-        </qtimetadata>
-      </itemmetadata>
-      <presentation>
-        <material>
-          <mattext texttype="text/html">${escapeXml(q.text)}</mattext>
-        </material>
-        <response_str ident="response1" rcardinality="Single">
-          <render_fib>
-            <response_label ident="answer1" rshuffle="No"/>
-          </render_fib>
-        </response_str>
-      </presentation>
-      <resprocessing>
-        <outcomes>
-          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
-        </outcomes>
-      </resprocessing>
-    </item>`;
+      <item ident="${questionId}" title="Question">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>cc_profile</fieldlabel>
+              <fieldentry>cc.essay.v0p1</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>qmd_computerscored</fieldlabel>
+              <fieldentry>No</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;div&gt;&lt;p&gt;${escapeXml(q.text)}&lt;/p&gt;&lt;/div&gt;</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib>
+              <response_label ident="answer1" rshuffle="No"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <other/>
+            </conditionvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
   }).join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_qtiasiv1p2p1_v1p0.xsd">
   <assessment ident="${resourceId}" title="${escapeXml(item.title)}">
     <qtimetadata>
       <qtimetadatafield>
@@ -449,7 +454,133 @@ function generateClassicQuizQtiXml(item: CanvasModuleItem, resourceId: string): 
       </qtimetadatafield>
       <qtimetadatafield>
         <fieldlabel>cc_maxattempts</fieldlabel>
-        <fieldentry>2</fieldentry>
+        <fieldentry>1</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>
+    <section ident="root_section">${questionItems}
+    </section>
+  </assessment>
+</questestinterop>`;
+}
+
+// Generate Canvas-specific QTI for non_cc_assessments/*.xml.qti
+function generateCanvasQtiXml(item: CanvasModuleItem, resourceId: string): string {
+  const questions = item.questions || [];
+
+  const questionItems = questions.map((q) => {
+    const questionId = generateId();
+    const points = q.points || 1;
+    const pointsDecimal = Number.isInteger(points) ? `${points}.0` : points.toString();
+
+    if (q.type === "multiple_choice" && q.answers) {
+      const correctAnswer = q.answers.find((a) => a.correct);
+      const correctIdx = correctAnswer ? q.answers.indexOf(correctAnswer) : 0;
+      const answerIds = q.answers.map((_, i) => `${1000 + i}`).join(",");
+
+      return `
+      <item ident="${questionId}" title="Question">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>multiple_choice_question</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>${pointsDecimal}</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry>${answerIds}</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>${questionId}</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;div&gt;&lt;p&gt;${escapeXml(q.text)}&lt;/p&gt;&lt;/div&gt;</mattext>
+          </material>
+          <response_lid ident="response1" rcardinality="Single">
+            <render_choice>
+${q.answers.map((a, aIndex) => `              <response_label ident="${1000 + aIndex}">
+                <material>
+                  <mattext texttype="text/plain">${escapeXml(a.text)}</mattext>
+                </material>
+              </response_label>`).join("\n")}
+            </render_choice>
+          </response_lid>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <varequal respident="response1">${1000 + correctIdx}</varequal>
+            </conditionvar>
+            <setvar action="Set" varname="SCORE">100</setvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
+    }
+
+    // Essay question with Canvas format
+    const qType = q.type === "essay" ? "essay_question" : "short_answer_question";
+    return `
+      <item ident="${questionId}" title="Question">
+        <itemmetadata>
+          <qtimetadata>
+            <qtimetadatafield>
+              <fieldlabel>question_type</fieldlabel>
+              <fieldentry>${qType}</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>points_possible</fieldlabel>
+              <fieldentry>${pointsDecimal}</fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>original_answer_ids</fieldlabel>
+              <fieldentry></fieldentry>
+            </qtimetadatafield>
+            <qtimetadatafield>
+              <fieldlabel>assessment_question_identifierref</fieldlabel>
+              <fieldentry>${questionId}</fieldentry>
+            </qtimetadatafield>
+          </qtimetadata>
+        </itemmetadata>
+        <presentation>
+          <material>
+            <mattext texttype="text/html">&lt;div&gt;&lt;p&gt;${escapeXml(q.text)}&lt;/p&gt;&lt;/div&gt;</mattext>
+          </material>
+          <response_str ident="response1" rcardinality="Single">
+            <render_fib>
+              <response_label ident="answer1" rshuffle="No"/>
+            </render_fib>
+          </response_str>
+        </presentation>
+        <resprocessing>
+          <outcomes>
+            <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          </outcomes>
+          <respcondition continue="No">
+            <conditionvar>
+              <other/>
+            </conditionvar>
+          </respcondition>
+        </resprocessing>
+      </item>`;
+  }).join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+  <assessment ident="${resourceId}" title="${escapeXml(item.title)}">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>cc_maxattempts</fieldlabel>
+        <fieldentry>1</fieldentry>
       </qtimetadatafield>
     </qtimetadata>
     <section ident="root_section">${questionItems}
@@ -631,13 +762,19 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
         }
 
         case "quiz": {
-          // Classic Quizzes format: questions inline in assessment_qti.xml
+          // Classic Quizzes format: Canvas needs BOTH QTI files
           const quizFolder = zip.folder(resourceId);
           const metaResourceId = generateId();
 
-          // Create quiz folder with QTI containing inline questions
+          // Ensure non_cc_assessments folder exists
+          const nonCcFolder = zip.folder("non_cc_assessments");
+
+          // Create quiz folder with CC-profile QTI
           quizFolder?.file("assessment_meta.xml", generateQuizMetaXml(item, resourceId, ctx));
-          quizFolder?.file("assessment_qti.xml", generateClassicQuizQtiXml(item, resourceId));
+          quizFolder?.file("assessment_qti.xml", generateCCProfileQtiXml(item, resourceId));
+
+          // Create Canvas-specific QTI in non_cc_assessments folder
+          nonCcFolder?.file(`${resourceId}.xml.qti`, generateCanvasQtiXml(item, resourceId));
 
           // Main quiz resource
           resources.push({
@@ -647,12 +784,15 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
             dependency: metaResourceId,
           });
 
-          // Assessment meta resource
+          // Assessment meta resource - includes BOTH assessment_meta.xml AND the non_cc_assessments file
           resources.push({
             id: metaResourceId,
             type: "associatedcontent/imscc_xmlv1p1/learning-application-resource",
             href: `${resourceId}/assessment_meta.xml`,
-            files: [`${resourceId}/assessment_meta.xml`],
+            files: [
+              `${resourceId}/assessment_meta.xml`,
+              `non_cc_assessments/${resourceId}.xml.qti`,
+            ],
           });
           break;
         }
