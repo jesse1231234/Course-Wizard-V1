@@ -13,7 +13,7 @@ When evaluating, consider:
 
 Be constructive in your feedback. When something doesn't meet criteria, explain why and provide specific suggestions for improvement.
 
-You must respond with valid JSON only.`;
+CRITICAL: You must respond with raw JSON only. Do NOT wrap your response in markdown code blocks. Do NOT include any text before or after the JSON. Start your response with { and end with }.`;
 }
 
 export function buildEvaluationUserPrompt(
@@ -88,7 +88,7 @@ When generating content:
 - Design assessment items that measure learning objectives
 - Maintain consistent formatting and structure
 
-You must respond with valid JSON only.`;
+CRITICAL: You must respond with raw JSON only. Do NOT wrap your response in markdown code blocks (no \`\`\`). Do NOT include any text before or after the JSON. Start your response with { and end with }.`;
 }
 
 export function buildCanvasGenerationUserPrompt(
