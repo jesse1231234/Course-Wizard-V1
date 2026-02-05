@@ -23,12 +23,13 @@ export async function POST(request: NextRequest) {
     const userPrompt = buildCanvasGenerationUserPrompt(answers);
 
     // Call LLM with higher token limit for course generation
+    // Using 16000 to allow for comprehensive course content
     const course = await generateJSONResponse<GeneratedCourse>(
       [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      { temperature: 0.7, maxTokens: 8000 }
+      { temperature: 0.7, maxTokens: 16000 }
     );
 
     // Validate the response structure
