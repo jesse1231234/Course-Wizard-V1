@@ -1,15 +1,19 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createAzure } from "@ai-sdk/azure";
 
-type LLMProvider = "openai" | "anthropic";
+type LLMProvider = "openai" | "anthropic" | "azure";
 
 function getProvider(): LLMProvider {
   const provider = process.env.LLM_PROVIDER?.toLowerCase() as LLMProvider;
-  if (provider === "openai" || provider === "anthropic") {
+  if (provider === "openai" || provider === "anthropic" || provider === "azure") {
     return provider;
   }
-  // Default to anthropic if ANTHROPIC_API_KEY exists, otherwise openai
+  // Auto-detect based on available environment variables
+  if (process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_ENDPOINT) {
+    return "azure";
+  }
   if (process.env.ANTHROPIC_API_KEY) {
     return "anthropic";
   }
@@ -18,6 +22,16 @@ function getProvider(): LLMProvider {
 
 function getModel() {
   const provider = getProvider();
+
+  if (provider === "azure") {
+    const azure = createAzure({
+      apiKey: process.env.AZURE_OPENAI_API_KEY,
+      resourceName: extractResourceName(process.env.AZURE_OPENAI_ENDPOINT || ""),
+      apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview",
+    });
+    const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4";
+    return azure(deploymentName);
+  }
 
   if (provider === "anthropic") {
     const anthropic = createAnthropic({
@@ -30,6 +44,20 @@ function getModel() {
     apiKey: process.env.OPENAI_API_KEY,
   });
   return openai("gpt-4o");
+}
+
+// Extract resource name from Azure endpoint URL
+// e.g., "https://myresource.openai.azure.com" -> "myresource"
+function extractResourceName(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    const hostname = url.hostname;
+    // hostname is like "myresource.openai.azure.com"
+    return hostname.split(".")[0];
+  } catch {
+    // If URL parsing fails, return the endpoint as-is
+    return endpoint;
+  }
 }
 
 export interface LLMMessage {
