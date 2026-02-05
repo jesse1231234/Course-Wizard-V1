@@ -27,7 +27,6 @@ function getModel() {
     const azure = createAzure({
       apiKey: process.env.AZURE_OPENAI_API_KEY,
       resourceName: extractResourceName(process.env.AZURE_OPENAI_ENDPOINT || ""),
-      apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview",
     });
     const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4";
     return azure(deploymentName);
