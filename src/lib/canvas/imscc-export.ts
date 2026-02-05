@@ -32,6 +32,15 @@ interface ExportContext {
   assignmentGroupId: string;
 }
 
+// Question with generated ID for item bank references
+interface QuestionWithId {
+  id: string;
+  text: string;
+  type: string;
+  points: number;
+  answers?: Array<{ text: string; correct: boolean }>;
+}
+
 // ============================================
 // COURSE SETTINGS GENERATORS
 // ============================================
@@ -339,20 +348,24 @@ function generateQuizMetaXml(
 </quiz>`;
 }
 
-function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string {
-  const questions = item.questions || [];
 
-  const questionItems = questions
-    .map((q, index) => {
-      const qId = `question_${index + 1}`;
-      const points = q.points || 1;
+// ============================================
+// NEW QUIZZES GENERATORS
+// ============================================
 
+function generateItemBankQti(
+  item: CanvasModuleItem,
+  bankId: string,
+  questionsWithIds: QuestionWithId[]
+): string {
+  const questionItems = questionsWithIds
+    .map((q) => {
       if (q.type === "multiple_choice" && q.answers) {
         const correctAnswer = q.answers.find((a) => a.correct);
-        const correctIndex = correctAnswer ? q.answers.indexOf(correctAnswer) : 0;
+        const correctId = correctAnswer ? q.answers.indexOf(correctAnswer).toString() : "0";
 
         return `
-    <item ident="${qId}" title="Question ${index + 1}">
+    <item ident="${q.id}" title="">
       <itemmetadata>
         <qtimetadata>
           <qtimetadatafield>
@@ -361,7 +374,15 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
           </qtimetadatafield>
           <qtimetadatafield>
             <fieldlabel>points_possible</fieldlabel>
-            <fieldentry>${points}</fieldentry>
+            <fieldentry/>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>original_answer_ids</fieldlabel>
+            <fieldentry>${q.answers.map((_, i) => `ans_${i}`).join(",")}</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>calculator_type</fieldlabel>
+            <fieldentry>none</fieldentry>
           </qtimetadatafield>
         </qtimetadata>
       </itemmetadata>
@@ -370,13 +391,13 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
           <mattext texttype="text/html">${escapeXml(q.text)}</mattext>
         </material>
         <response_lid ident="response1" rcardinality="Single">
-          <render_choice>
+          <render_choice shuffle="Yes">
             ${q.answers
               .map(
                 (a, aIndex) => `
             <response_label ident="ans_${aIndex}">
               <material>
-                <mattext texttype="text/plain">${escapeXml(a.text)}</mattext>
+                <mattext texttype="text/html">${escapeXml(a.text)}</mattext>
               </material>
             </response_label>`
               )
@@ -390,7 +411,7 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
         </outcomes>
         <respcondition continue="No">
           <conditionvar>
-            <varequal respident="response1">ans_${correctIndex}</varequal>
+            <varequal respident="response1">ans_${correctId}</varequal>
           </conditionvar>
           <setvar action="Set" varname="SCORE">100</setvar>
         </respcondition>
@@ -401,7 +422,7 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
       // Short answer or essay
       const qType = q.type === "essay" ? "essay_question" : "short_answer_question";
       return `
-    <item ident="${qId}" title="Question ${index + 1}">
+    <item ident="${q.id}" title="">
       <itemmetadata>
         <qtimetadata>
           <qtimetadatafield>
@@ -410,7 +431,11 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
           </qtimetadatafield>
           <qtimetadatafield>
             <fieldlabel>points_possible</fieldlabel>
-            <fieldentry>${points}</fieldentry>
+            <fieldentry/>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>calculator_type</fieldlabel>
+            <fieldentry>none</fieldentry>
           </qtimetadatafield>
         </qtimetadata>
       </itemmetadata>
@@ -428,14 +453,66 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
         <outcomes>
           <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
         </outcomes>
+        <respcondition continue="No">
+          <conditionvar>
+            <other/>
+          </conditionvar>
+        </respcondition>
       </resprocessing>
     </item>`;
     })
     .join("");
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0"?>
 <questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
-  <assessment ident="${resourceId}" title="${escapeXml(item.title)}">
+  <objectbank ident="${bankId}" canvas_item_bank="true">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>bank_title</fieldlabel>
+        <fieldentry>${escapeXml(item.title)} - Question Bank</fieldentry>
+      </qtimetadatafield>
+      <qtimetadatafield>
+        <fieldlabel>bank_type</fieldlabel>
+        <fieldentry>Course</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>${questionItems}
+  </objectbank>
+</questestinterop>`;
+}
+
+function generateQuizReferenceQti(
+  item: CanvasModuleItem,
+  quizId: string,
+  bankId: string,
+  questionsWithIds: QuestionWithId[]
+): string {
+  const bankEntries = questionsWithIds
+    .map(
+      (q) =>
+        `      <bankentry_item sourcebank_ref="${bankId}" item_ref="${q.id}" points_possible="${q.points}.0" entry_type="Item"/>`
+    )
+    .join("\n");
+
+  return `<?xml version="1.0"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+  <assessment ident="${quizId}" title="${escapeXml(item.title)}">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>cc_maxattempts</fieldlabel>
+        <fieldentry>2</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>
+    <section ident="root_section">
+${bankEntries}
+    </section>
+  </assessment>
+</questestinterop>`;
+}
+
+function generateNewQuizQtiXml(resourceId: string, title: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_qtiasiv1p2p1_v1p0.xsd">
+  <assessment ident="${resourceId}" title="${escapeXml(title)}">
     <qtimetadata>
       <qtimetadatafield>
         <fieldlabel>cc_profile</fieldlabel>
@@ -454,8 +531,7 @@ function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string 
         <fieldentry>2</fieldentry>
       </qtimetadatafield>
     </qtimetadata>
-    <section ident="root_section">${questionItems}
-    </section>
+    <section ident="root_section"/>
   </assessment>
 </questestinterop>`;
 }
@@ -564,6 +640,9 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
   // Create wiki_content folder for pages
   const wikiContent = zip.folder("wiki_content");
 
+  // Create non_cc_assessments folder for New Quizzes
+  const nonCcAssessments = zip.folder("non_cc_assessments");
+
   // First pass: collect rubrics from assignments
   for (const mod of course.modules) {
     for (const item of mod.items) {
@@ -633,28 +712,61 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
         }
 
         case "quiz": {
-          // Quizzes get their own folder
+          // New Quizzes format: questions in item bank, quiz references the bank
           const quizFolder = zip.folder(resourceId);
           const metaResourceId = generateId();
+          const bankId = generateId();
 
+          // Generate unique IDs for each question
+          const questionsWithIds: QuestionWithId[] = (item.questions || []).map((q, index) => ({
+            id: `q_${Math.random().toString(36).slice(2, 10)}${index}`,
+            text: q.text,
+            type: q.type,
+            points: q.points || 1,
+            answers: q.answers,
+          }));
+
+          // Create item bank with questions in non_cc_assessments
+          nonCcAssessments?.file(
+            `${bankId}.xml.qti`,
+            generateItemBankQti(item, bankId, questionsWithIds)
+          );
+
+          // Create quiz reference file in non_cc_assessments
+          nonCcAssessments?.file(
+            `${resourceId}.xml.qti`,
+            generateQuizReferenceQti(item, resourceId, bankId, questionsWithIds)
+          );
+
+          // Create quiz folder with empty QTI (New Quizzes have empty sections)
           quizFolder?.file("assessment_meta.xml", generateQuizMetaXml(item, resourceId, ctx));
-          quizFolder?.file("assessment_qti.xml", generateQuizQtiXml(item, resourceId));
+          quizFolder?.file("assessment_qti.xml", generateNewQuizQtiXml(resourceId, item.title));
 
-          // Canvas format: main quiz resource has no href, only QTI file
+          // Add item bank as a resource
+          resources.push({
+            id: bankId,
+            type: "associatedcontent/imscc_xmlv1p1/learning-application-resource",
+            href: `non_cc_assessments/${bankId}.xml.qti`,
+            files: [`non_cc_assessments/${bankId}.xml.qti`],
+          });
+
+          // Main quiz resource (empty QTI)
           resources.push({
             id: resourceId,
             type: "imsqti_xmlv1p2/imscc_xmlv1p1/assessment",
-            // No href for quiz resources - Canvas format
             files: [`${resourceId}/assessment_qti.xml`],
             dependency: metaResourceId,
           });
 
-          // Separate resource for assessment_meta.xml
+          // Assessment meta resource - includes reference to quiz reference file
           resources.push({
             id: metaResourceId,
             type: "associatedcontent/imscc_xmlv1p1/learning-application-resource",
             href: `${resourceId}/assessment_meta.xml`,
-            files: [`${resourceId}/assessment_meta.xml`],
+            files: [
+              `${resourceId}/assessment_meta.xml`,
+              `non_cc_assessments/${resourceId}.xml.qti`,
+            ],
           });
           break;
         }
