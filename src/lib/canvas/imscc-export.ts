@@ -280,8 +280,9 @@ function generateQuizMetaXml(
   const points = item.points || (item.questions?.reduce((sum, q) => sum + (q.points || 0), 0)) || 10;
   const questionCount = item.questions?.length || 0;
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd" identifier="${resourceId}">
+  // New Quizzes format requires additional metadata fields
+  return `<?xml version="1.0"?>
+<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd" identifier="${resourceId}">
   <title>${escapeXml(item.title)}</title>
   <description>&lt;p&gt;Please answer the following ${questionCount} questions.&lt;/p&gt;</description>
   <due_at/>
@@ -289,10 +290,11 @@ function generateQuizMetaXml(
   <unlock_at/>
   <shuffle_questions>false</shuffle_questions>
   <shuffle_answers>true</shuffle_answers>
+  <calculator_type>none</calculator_type>
   <scoring_policy>keep_highest</scoring_policy>
   <hide_results/>
   <quiz_type>assignment</quiz_type>
-  <points_possible>${points}</points_possible>
+  <points_possible>${points}.0</points_possible>
   <require_lockdown_browser>false</require_lockdown_browser>
   <require_lockdown_browser_for_results>false</require_lockdown_browser_for_results>
   <require_lockdown_browser_monitor>false</require_lockdown_browser_monitor>
@@ -300,7 +302,9 @@ function generateQuizMetaXml(
   <show_correct_answers>true</show_correct_answers>
   <anonymous_submissions>false</anonymous_submissions>
   <could_be_locked>false</could_be_locked>
+  <disable_timer_autosubmission>false</disable_timer_autosubmission>
   <allowed_attempts>2</allowed_attempts>
+  <build_on_last_attempt>false</build_on_last_attempt>
   <one_question_at_a_time>false</one_question_at_a_time>
   <cant_go_back>false</cant_go_back>
   <available>true</available>
@@ -308,6 +312,22 @@ function generateQuizMetaXml(
   <show_correct_answers_last_attempt>false</show_correct_answers_last_attempt>
   <only_visible_to_overrides>false</only_visible_to_overrides>
   <module_locked>false</module_locked>
+  <allow_clear_mc_selection/>
+  <disable_document_access>false</disable_document_access>
+  <result_view_restricted>false</result_view_restricted>
+  <display_items>true</display_items>
+  <display_item_feedback>true</display_item_feedback>
+  <display_item_response>true</display_item_response>
+  <display_points_awarded>true</display_points_awarded>
+  <display_points_possible>true</display_points_possible>
+  <display_item_correct_answer>true</display_item_correct_answer>
+  <display_item_response_correctness>true</display_item_response_correctness>
+  <display_item_response_qualifier/>
+  <show_item_responses_at/>
+  <hide_item_responses_at/>
+  <display_item_response_correctness_qualifier/>
+  <show_item_response_correctness_at/>
+  <hide_item_response_correctness_at/>
   <assignment identifier="${generateId()}">
     <title>${escapeXml(item.title)}</title>
     <due_at/>
@@ -319,11 +339,13 @@ function generateQuizMetaXml(
     <quiz_identifierref>${resourceId}</quiz_identifierref>
     <allowed_extensions/>
     <has_group_category>false</has_group_category>
-    <points_possible>${points}</points_possible>
+    <points_possible>${points}.0</points_possible>
     <grading_type>points</grading_type>
     <all_day>false</all_day>
     <submission_types>online_quiz</submission_types>
     <position>1</position>
+    <turnitin_enabled>false</turnitin_enabled>
+    <vericite_enabled>false</vericite_enabled>
     <peer_review_count>0</peer_review_count>
     <peer_reviews>false</peer_reviews>
     <automatic_peer_reviews>false</automatic_peer_reviews>
@@ -331,6 +353,7 @@ function generateQuizMetaXml(
     <grade_group_students_individually>false</grade_group_students_individually>
     <freeze_on_copy>false</freeze_on_copy>
     <omit_from_final_grade>false</omit_from_final_grade>
+    <intra_group_peer_reviews>false</intra_group_peer_reviews>
     <only_visible_to_overrides>false</only_visible_to_overrides>
     <post_to_sis>false</post_to_sis>
     <moderated_grading>false</moderated_grading>
@@ -344,6 +367,7 @@ function generateQuizMetaXml(
       <post_manually>false</post_manually>
     </post_policy>
     <assignment_group_identifierref>${ctx.assignmentGroupId}</assignment_group_identifierref>
+    <assignment_overrides/>
   </assignment>
 </quiz>`;
 }
