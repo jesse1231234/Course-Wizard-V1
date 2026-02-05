@@ -432,7 +432,7 @@ function generateClassicQuizQtiXml(item: CanvasModuleItem, resourceId: string): 
   }).join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_qtiasiv1p2p1_v1p0.xsd">
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
   <assessment ident="${resourceId}" title="${escapeXml(item.title)}">
     <qtimetadata>
       <qtimetadatafield>
