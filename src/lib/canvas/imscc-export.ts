@@ -9,6 +9,16 @@ function generateId(): string {
   return `g${Math.random().toString(16).slice(2)}${Date.now().toString(16).slice(-8)}`;
 }
 
+// Generate a Canvas-compatible hex hash ID (32 characters)
+function generateHexId(): string {
+  const chars = '0123456789abcdef';
+  let result = '';
+  for (let i = 0; i < 32; i++) {
+    result += chars[Math.floor(Math.random() * 16)];
+  }
+  return result;
+}
+
 function escapeXml(text: string): string {
   if (!text) return "";
   return text
@@ -315,19 +325,6 @@ function generateQuizMetaXml(
   <allow_clear_mc_selection/>
   <disable_document_access>false</disable_document_access>
   <result_view_restricted>false</result_view_restricted>
-  <display_items>true</display_items>
-  <display_item_feedback>true</display_item_feedback>
-  <display_item_response>true</display_item_response>
-  <display_points_awarded>true</display_points_awarded>
-  <display_points_possible>true</display_points_possible>
-  <display_item_correct_answer>true</display_item_correct_answer>
-  <display_item_response_correctness>true</display_item_response_correctness>
-  <display_item_response_qualifier/>
-  <show_item_responses_at/>
-  <hide_item_responses_at/>
-  <display_item_response_correctness_qualifier/>
-  <show_item_response_correctness_at/>
-  <hide_item_response_correctness_at/>
   <assignment identifier="${generateId()}">
     <title>${escapeXml(item.title)}</title>
     <due_at/>
@@ -388,6 +385,7 @@ function generateItemBankQti(
         const correctAnswer = q.answers.find((a) => a.correct);
         const correctId = correctAnswer ? q.answers.indexOf(correctAnswer).toString() : "0";
 
+        const assessmentQuestionRef = generateHexId();
         return `
     <item ident="${q.id}" title="">
       <itemmetadata>
@@ -403,6 +401,10 @@ function generateItemBankQti(
           <qtimetadatafield>
             <fieldlabel>original_answer_ids</fieldlabel>
             <fieldentry>${q.answers.map((_, i) => `ans_${i}`).join(",")}</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>assessment_question_identifierref</fieldlabel>
+            <fieldentry>${assessmentQuestionRef}</fieldentry>
           </qtimetadatafield>
           <qtimetadatafield>
             <fieldlabel>calculator_type</fieldlabel>
@@ -445,6 +447,7 @@ function generateItemBankQti(
 
       // Short answer or essay
       const qType = q.type === "essay" ? "essay_question" : "short_answer_question";
+      const assessmentQuestionRef = generateHexId();
       return `
     <item ident="${q.id}" title="">
       <itemmetadata>
@@ -456,6 +459,10 @@ function generateItemBankQti(
           <qtimetadatafield>
             <fieldlabel>points_possible</fieldlabel>
             <fieldentry/>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>assessment_question_identifierref</fieldlabel>
+            <fieldentry>${assessmentQuestionRef}</fieldentry>
           </qtimetadatafield>
           <qtimetadatafield>
             <fieldlabel>calculator_type</fieldlabel>
@@ -741,9 +748,9 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
           const metaResourceId = generateId();
           const bankId = generateId();
 
-          // Generate unique IDs for each question
-          const questionsWithIds: QuestionWithId[] = (item.questions || []).map((q, index) => ({
-            id: `q_${Math.random().toString(36).slice(2, 10)}${index}`,
+          // Generate unique IDs for each question (Canvas uses 32-char hex hashes)
+          const questionsWithIds: QuestionWithId[] = (item.questions || []).map((q) => ({
+            id: generateHexId(),
             text: q.text,
             type: q.type,
             points: q.points || 1,
