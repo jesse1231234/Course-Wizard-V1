@@ -168,11 +168,14 @@ function generateCourseSettingsXml(course: GeneratedCourse): string {
 // CONTENT GENERATORS
 // ============================================
 
-function generateWikiPageHtml(item: CanvasModuleItem): string {
+function generateWikiPageHtml(item: CanvasModuleItem, resourceId: string): string {
   return `<html>
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <title>${escapeXml(item.title)}</title>
+<meta name="identifier" content="${resourceId}"/>
+<meta name="editing_roles" content="teachers"/>
+<meta name="workflow_state" content="active"/>
 </head>
 <body>
 ${item.content || "<p>Content coming soon.</p>"}
@@ -570,7 +573,7 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
           // Pages go in wiki_content folder
           const pageSlug = slugify(item.title);
           const pageFile = `${pageSlug}.html`;
-          wikiContent?.file(pageFile, generateWikiPageHtml(item));
+          wikiContent?.file(pageFile, generateWikiPageHtml(item, resourceId));
 
           resources.push({
             id: resourceId,
@@ -648,7 +651,7 @@ export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
           // Default to page
           const pageSlug = slugify(item.title);
           const pageFile = `${pageSlug}.html`;
-          wikiContent?.file(pageFile, generateWikiPageHtml(item));
+          wikiContent?.file(pageFile, generateWikiPageHtml(item, resourceId));
 
           resources.push({
             id: resourceId,
