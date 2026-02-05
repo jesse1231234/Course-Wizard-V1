@@ -1,13 +1,16 @@
 import JSZip from "jszip";
-import type { GeneratedCourse, CanvasModule, CanvasModuleItem } from "@/types";
+import type { GeneratedCourse, CanvasModuleItem, CanvasRubric } from "@/types";
 
-// Generate a unique identifier
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
 function generateId(): string {
-  return `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
+  return `g${Math.random().toString(16).slice(2)}${Date.now().toString(16).slice(-8)}`;
 }
 
-// Escape XML special characters
 function escapeXml(text: string): string {
+  if (!text) return "";
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -16,188 +19,349 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
-// Generate imsmanifest.xml
-function generateManifest(course: GeneratedCourse): string {
-  const resources: string[] = [];
-  const items: string[] = [];
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
-  // Add course overview resource
-  const overviewId = generateId();
-  resources.push(`
-    <resource identifier="${overviewId}" type="webcontent" href="course_overview.html">
-      <file href="course_overview.html"/>
-    </resource>`);
+// Track identifiers for cross-referencing
+interface ExportContext {
+  rubrics: Map<string, { id: string; rubric: CanvasRubric; itemId: string }>;
+  assignmentGroupId: string;
+}
 
-  items.push(`
-      <item identifier="overview_item" identifierref="${overviewId}">
-        <title>Course Overview</title>
-      </item>`);
+// ============================================
+// COURSE SETTINGS GENERATORS
+// ============================================
 
-  // Process modules
-  for (const courseModule of course.modules) {
-    const moduleId = `mod_${courseModule.id}`;
+function generateModuleMeta(course: GeneratedCourse, itemRefs: Map<string, string>): string {
+  let modules = "";
+  let position = 1;
 
-    const moduleItems: string[] = [];
+  for (const mod of course.modules) {
+    const moduleId = `mod_${mod.id}`;
+    let items = "";
+    let itemPosition = 1;
 
-    for (const item of courseModule.items) {
-      const itemId = `item_${item.id}`;
-      const resourceId = `res_${item.id}`;
+    for (const item of mod.items) {
+      const itemId = `item_${mod.id}_${item.id}`;
+      const resourceRef = itemRefs.get(item.id) || "";
 
-      let resourceType = "webcontent";
-      let href = `${item.id}.html`;
+      let contentType = "WikiPage";
+      if (item.type === "quiz") contentType = "Quizzes::Quiz";
+      else if (item.type === "assignment") contentType = "Assignment";
+      else if (item.type === "discussion") contentType = "DiscussionTopic";
 
-      if (item.type === "assignment") {
-        resourceType = "assignment";
-        href = `assignments/${item.id}.html`;
-      } else if (item.type === "discussion") {
-        resourceType = "discussion";
-        href = `discussions/${item.id}.html`;
-      } else if (item.type === "quiz") {
-        resourceType = "assessment";
-        href = `quizzes/${item.id}.xml`;
-      }
-
-      resources.push(`
-    <resource identifier="${resourceId}" type="${resourceType}" href="${href}">
-      <file href="${href}"/>
-    </resource>`);
-
-      moduleItems.push(`
-          <item identifier="${itemId}" identifierref="${resourceId}">
-            <title>${escapeXml(item.title)}</title>
-          </item>`);
+      items += `
+      <item identifier="${itemId}">
+        <content_type>${contentType}</content_type>
+        <workflow_state>active</workflow_state>
+        <title>${escapeXml(item.title)}</title>
+        <identifierref>${resourceRef}</identifierref>
+        <position>${itemPosition}</position>
+        <new_tab>false</new_tab>
+        <indent>0</indent>
+      </item>`;
+      itemPosition++;
     }
 
-    items.push(`
-      <item identifier="${moduleId}">
-        <title>${escapeXml(courseModule.name)}</title>
-        ${moduleItems.join("")}
-      </item>`);
+    modules += `
+  <module identifier="${moduleId}">
+    <title>${escapeXml(mod.name)}</title>
+    <workflow_state>active</workflow_state>
+    <position>${position}</position>
+    <require_sequential_progress>false</require_sequential_progress>
+    <locked>false</locked>
+    <items>${items}
+    </items>
+  </module>`;
+    position++;
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<manifest identifier="course_${generateId()}"
-  xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"
-  xmlns:lom="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource"
-  xmlns:lomimscc="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/manifest"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_imscp_v1p2_v1p0.xsd">
-  <metadata>
-    <schema>IMS Common Cartridge</schema>
-    <schemaversion>1.1.0</schemaversion>
-    <lomimscc:lom>
-      <lomimscc:general>
-        <lomimscc:title>
-          <lomimscc:string>${escapeXml(course.title)}</lomimscc:string>
-        </lomimscc:title>
-        <lomimscc:description>
-          <lomimscc:string>${escapeXml(course.description)}</lomimscc:string>
-        </lomimscc:description>
-      </lomimscc:general>
-    </lomimscc:lom>
-  </metadata>
-  <organizations>
-    <organization identifier="org_1" structure="rooted-hierarchy">
-      <item identifier="root">
-        ${items.join("")}
-      </item>
-    </organization>
-  </organizations>
-  <resources>
-    ${resources.join("")}
-  </resources>
-</manifest>`;
+<modules xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">${modules}
+</modules>`;
 }
 
-// Generate HTML content for a page
-function generatePageHtml(title: string, content: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>${escapeXml(title)}</title>
-</head>
-<body>
-${content}
-</body>
-</html>`;
-}
-
-// Generate assignment HTML
-function generateAssignmentHtml(item: CanvasModuleItem): string {
-  let rubricHtml = "";
-
-  if (item.rubric) {
-    rubricHtml = `
-<h3>Rubric: ${escapeXml(item.rubric.title)}</h3>
-<table border="1" cellpadding="8" cellspacing="0">
-  <thead>
-    <tr>
-      <th>Criterion</th>
-      <th>Points</th>
-      <th>Ratings</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${item.rubric.criteria
-      .map(
-        (c) => `
-    <tr>
-      <td>${escapeXml(c.description)}</td>
-      <td>${c.points}</td>
-      <td>${c.ratings.map((r) => `${escapeXml(r.description)} (${r.points} pts)`).join("<br>")}</td>
-    </tr>`
-      )
-      .join("")}
-  </tbody>
-</table>`;
+function generateRubricsXml(ctx: ExportContext): string {
+  if (ctx.rubrics.size === 0) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<rubrics xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
+</rubrics>`;
   }
 
-  return `<!DOCTYPE html>
-<html>
+  let rubricsXml = "";
+
+  for (const rubricData of Array.from(ctx.rubrics.values())) {
+    const { id, rubric } = rubricData;
+    const totalPoints = rubric.criteria.reduce((sum: number, c: { points: number }) => sum + c.points, 0);
+
+    let criteriaXml = "";
+    for (const criterion of rubric.criteria) {
+      const criterionId = `_${Math.random().toString(36).slice(2, 6)}`;
+
+      let ratingsXml = "";
+      for (const rating of criterion.ratings) {
+        const ratingId = `_${Math.random().toString(36).slice(2, 6)}`;
+        ratingsXml += `
+          <rating>
+            <description>${escapeXml(rating.description)}</description>
+            <points>${rating.points}</points>
+            <criterion_id>${criterionId}</criterion_id>
+            <id>${ratingId}</id>
+          </rating>`;
+      }
+
+      criteriaXml += `
+      <criterion>
+        <criterion_id>${criterionId}</criterion_id>
+        <points>${criterion.points}</points>
+        <description>${escapeXml(criterion.description)}</description>
+        <ratings>${ratingsXml}
+        </ratings>
+      </criterion>`;
+    }
+
+    rubricsXml += `
+  <rubric identifier="${id}">
+    <read_only>false</read_only>
+    <title>${escapeXml(rubric.title)}</title>
+    <reusable>false</reusable>
+    <public>false</public>
+    <points_possible>${totalPoints}</points_possible>
+    <hide_score_total>false</hide_score_total>
+    <free_form_criterion_comments>false</free_form_criterion_comments>
+    <criteria>${criteriaXml}
+    </criteria>
+  </rubric>`;
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rubrics xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">${rubricsXml}
+</rubrics>`;
+}
+
+function generateAssignmentGroupsXml(ctx: ExportContext): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<assignmentGroups xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
+  <assignmentGroup identifier="${ctx.assignmentGroupId}">
+    <title>Assignments</title>
+    <position>1</position>
+    <group_weight>100.0</group_weight>
+  </assignmentGroup>
+</assignmentGroups>`;
+}
+
+function generateCourseSettingsXml(course: GeneratedCourse): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<course xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd" identifier="course_settings">
+  <title>${escapeXml(course.title)}</title>
+  <course_code>${escapeXml(course.title)}</course_code>
+  <default_view>modules</default_view>
+  <hide_final_grade>false</hide_final_grade>
+</course>`;
+}
+
+// ============================================
+// CONTENT GENERATORS
+// ============================================
+
+function generateWikiPageHtml(item: CanvasModuleItem): string {
+  return `<html>
 <head>
-  <meta charset="UTF-8">
-  <title>${escapeXml(item.title)}</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>${escapeXml(item.title)}</title>
 </head>
 <body>
-<h1>${escapeXml(item.title)}</h1>
-<p><strong>Points:</strong> ${item.points || 0}</p>
+${item.content || "<p>Content coming soon.</p>"}
+</body>
+</html>`;
+}
 
+function generateDiscussionTopicXml(item: CanvasModuleItem): string {
+  const prompt = item.prompt || item.content || "<p>Share your thoughts on this topic.</p>";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<topic xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/imsccv1p1/imsdt_v1p1 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_imsdt_v1p1.xsd">
+  <title>${escapeXml(item.title)}</title>
+  <text texttype="text/html">${escapeXml(prompt)}</text>
+</topic>`;
+}
+
+function generateAssignmentSettingsXml(
+  item: CanvasModuleItem,
+  resourceId: string,
+  ctx: ExportContext
+): string {
+  const points = item.points || 100;
+  const rubricId = ctx.rubrics.get(item.id)?.id;
+
+  let rubricRef = "";
+  if (rubricId) {
+    rubricRef = `
+  <rubric_identifierref>${rubricId}</rubric_identifierref>
+  <rubric_use_for_grading>true</rubric_use_for_grading>
+  <rubric_hide_points>false</rubric_hide_points>
+  <rubric_hide_outcome_results>false</rubric_hide_outcome_results>
+  <rubric_hide_score_total>false</rubric_hide_score_total>`;
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<assignment identifier="${resourceId}" xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd">
+  <title>${escapeXml(item.title)}</title>
+  <due_at/>
+  <lock_at/>
+  <unlock_at/>
+  <module_locked>false</module_locked>
+  <workflow_state>published</workflow_state>
+  <assignment_group_identifierref>${ctx.assignmentGroupId}</assignment_group_identifierref>${rubricRef}
+  <assignment_overrides/>
+  <allowed_extensions/>
+  <has_group_category>false</has_group_category>
+  <points_possible>${points}</points_possible>
+  <grading_type>points</grading_type>
+  <all_day>false</all_day>
+  <submission_types>online_text_entry,online_upload</submission_types>
+  <position>1</position>
+  <peer_review_count>0</peer_review_count>
+  <peer_reviews>false</peer_reviews>
+  <automatic_peer_reviews>false</automatic_peer_reviews>
+  <anonymous_peer_reviews>false</anonymous_peer_reviews>
+  <grade_group_students_individually>false</grade_group_students_individually>
+  <freeze_on_copy>false</freeze_on_copy>
+  <omit_from_final_grade>false</omit_from_final_grade>
+  <only_visible_to_overrides>false</only_visible_to_overrides>
+  <post_to_sis>false</post_to_sis>
+  <moderated_grading>false</moderated_grading>
+  <grader_count>0</grader_count>
+  <grader_comments_visible_to_graders>true</grader_comments_visible_to_graders>
+  <anonymous_grading>false</anonymous_grading>
+  <graders_anonymous_to_graders>false</graders_anonymous_to_graders>
+  <grader_names_visible_to_final_grader>true</grader_names_visible_to_final_grader>
+  <anonymous_instructor_annotations>false</anonymous_instructor_annotations>
+  <post_policy>
+    <post_manually>false</post_manually>
+  </post_policy>
+</assignment>`;
+}
+
+function generateAssignmentHtml(item: CanvasModuleItem): string {
+  return `<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>${escapeXml(item.title)}</title>
+</head>
+<body>
 <h2>Instructions</h2>
-${item.content || "<p>No instructions provided.</p>"}
-
-${rubricHtml}
+${item.content || "<p>Complete this assignment according to the guidelines provided.</p>"}
 </body>
 </html>`;
 }
 
-// Generate discussion HTML
-function generateDiscussionHtml(item: CanvasModuleItem): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
+function generateQuizMetaXml(
+  item: CanvasModuleItem,
+  resourceId: string,
+  ctx: ExportContext
+): string {
+  const points = item.points || (item.questions?.reduce((sum, q) => sum + (q.points || 0), 0)) || 10;
+  const questionCount = item.questions?.length || 0;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<quiz xmlns="http://canvas.instructure.com/xsd/cccv1p0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://canvas.instructure.com/xsd/cccv1p0 https://canvas.instructure.com/xsd/cccv1p0.xsd" identifier="${resourceId}">
   <title>${escapeXml(item.title)}</title>
-</head>
-<body>
-<h1>${escapeXml(item.title)}</h1>
-${item.prompt || item.content || "<p>Discussion topic.</p>"}
-</body>
-</html>`;
+  <description>&lt;p&gt;Please answer the following ${questionCount} questions.&lt;/p&gt;</description>
+  <due_at/>
+  <lock_at/>
+  <unlock_at/>
+  <shuffle_questions>false</shuffle_questions>
+  <shuffle_answers>true</shuffle_answers>
+  <scoring_policy>keep_highest</scoring_policy>
+  <hide_results/>
+  <quiz_type>assignment</quiz_type>
+  <points_possible>${points}</points_possible>
+  <require_lockdown_browser>false</require_lockdown_browser>
+  <require_lockdown_browser_for_results>false</require_lockdown_browser_for_results>
+  <require_lockdown_browser_monitor>false</require_lockdown_browser_monitor>
+  <lockdown_browser_monitor_data/>
+  <show_correct_answers>true</show_correct_answers>
+  <anonymous_submissions>false</anonymous_submissions>
+  <could_be_locked>false</could_be_locked>
+  <allowed_attempts>2</allowed_attempts>
+  <one_question_at_a_time>false</one_question_at_a_time>
+  <cant_go_back>false</cant_go_back>
+  <available>true</available>
+  <one_time_results>false</one_time_results>
+  <show_correct_answers_last_attempt>false</show_correct_answers_last_attempt>
+  <only_visible_to_overrides>false</only_visible_to_overrides>
+  <module_locked>false</module_locked>
+  <assignment identifier="${generateId()}">
+    <title>${escapeXml(item.title)}</title>
+    <due_at/>
+    <lock_at/>
+    <unlock_at/>
+    <module_locked>false</module_locked>
+    <workflow_state>published</workflow_state>
+    <assignment_overrides/>
+    <quiz_identifierref>${resourceId}</quiz_identifierref>
+    <allowed_extensions/>
+    <has_group_category>false</has_group_category>
+    <points_possible>${points}</points_possible>
+    <grading_type>points</grading_type>
+    <all_day>false</all_day>
+    <submission_types>online_quiz</submission_types>
+    <position>1</position>
+    <peer_review_count>0</peer_review_count>
+    <peer_reviews>false</peer_reviews>
+    <automatic_peer_reviews>false</automatic_peer_reviews>
+    <anonymous_peer_reviews>false</anonymous_peer_reviews>
+    <grade_group_students_individually>false</grade_group_students_individually>
+    <freeze_on_copy>false</freeze_on_copy>
+    <omit_from_final_grade>false</omit_from_final_grade>
+    <only_visible_to_overrides>false</only_visible_to_overrides>
+    <post_to_sis>false</post_to_sis>
+    <moderated_grading>false</moderated_grading>
+    <grader_count>0</grader_count>
+    <grader_comments_visible_to_graders>true</grader_comments_visible_to_graders>
+    <anonymous_grading>false</anonymous_grading>
+    <graders_anonymous_to_graders>false</graders_anonymous_to_graders>
+    <grader_names_visible_to_final_grader>true</grader_names_visible_to_final_grader>
+    <anonymous_instructor_annotations>false</anonymous_instructor_annotations>
+    <post_policy>
+      <post_manually>false</post_manually>
+    </post_policy>
+    <assignment_group_identifierref>${ctx.assignmentGroupId}</assignment_group_identifierref>
+  </assignment>
+</quiz>`;
 }
 
-// Generate QTI quiz XML
-function generateQuizQti(item: CanvasModuleItem): string {
+function generateQuizQtiXml(item: CanvasModuleItem, resourceId: string): string {
   const questions = item.questions || [];
 
   const questionItems = questions
     .map((q, index) => {
-      const qId = `q_${index + 1}`;
+      const qId = `question_${index + 1}`;
+      const points = q.points || 1;
 
       if (q.type === "multiple_choice" && q.answers) {
         const correctAnswer = q.answers.find((a) => a.correct);
+        const correctIndex = correctAnswer ? q.answers.indexOf(correctAnswer) : 0;
+
         return `
     <item ident="${qId}" title="Question ${index + 1}">
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>question_type</fieldlabel>
+            <fieldentry>multiple_choice_question</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>points_possible</fieldlabel>
+            <fieldentry>${points}</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
       <presentation>
         <material>
           <mattext texttype="text/html">${escapeXml(q.text)}</mattext>
@@ -219,26 +383,34 @@ function generateQuizQti(item: CanvasModuleItem): string {
       </presentation>
       <resprocessing>
         <outcomes>
-          <decvar maxvalue="${q.points}" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
         </outcomes>
-        ${
-          correctAnswer
-            ? `
         <respcondition continue="No">
           <conditionvar>
-            <varequal respident="response1">ans_${q.answers.indexOf(correctAnswer)}</varequal>
+            <varequal respident="response1">ans_${correctIndex}</varequal>
           </conditionvar>
-          <setvar action="Set" varname="SCORE">${q.points}</setvar>
-        </respcondition>`
-            : ""
-        }
+          <setvar action="Set" varname="SCORE">100</setvar>
+        </respcondition>
       </resprocessing>
     </item>`;
       }
 
-      // Essay or short answer
+      // Short answer or essay
+      const qType = q.type === "essay" ? "essay_question" : "short_answer_question";
       return `
     <item ident="${qId}" title="Question ${index + 1}">
+      <itemmetadata>
+        <qtimetadata>
+          <qtimetadatafield>
+            <fieldlabel>question_type</fieldlabel>
+            <fieldentry>${qType}</fieldentry>
+          </qtimetadatafield>
+          <qtimetadatafield>
+            <fieldlabel>points_possible</fieldlabel>
+            <fieldentry>${points}</fieldentry>
+          </qtimetadatafield>
+        </qtimetadata>
+      </itemmetadata>
       <presentation>
         <material>
           <mattext texttype="text/html">${escapeXml(q.text)}</mattext>
@@ -251,7 +423,7 @@ function generateQuizQti(item: CanvasModuleItem): string {
       </presentation>
       <resprocessing>
         <outcomes>
-          <decvar maxvalue="${q.points}" minvalue="0" varname="SCORE" vartype="Decimal"/>
+          <decvar maxvalue="100" minvalue="0" varname="SCORE" vartype="Decimal"/>
         </outcomes>
       </resprocessing>
     </item>`;
@@ -259,65 +431,245 @@ function generateQuizQti(item: CanvasModuleItem): string {
     .join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2">
-  <assessment ident="quiz_${item.id}" title="${escapeXml(item.title)}">
-    <section ident="root_section">
-      ${questionItems}
+<questestinterop xmlns="http://www.imsglobal.org/xsd/ims_qtiasiv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd">
+  <assessment ident="${resourceId}" title="${escapeXml(item.title)}">
+    <qtimetadata>
+      <qtimetadatafield>
+        <fieldlabel>cc_maxattempts</fieldlabel>
+        <fieldentry>2</fieldentry>
+      </qtimetadatafield>
+    </qtimetadata>
+    <section ident="root_section">${questionItems}
     </section>
   </assessment>
 </questestinterop>`;
 }
 
-// Main export function
+// ============================================
+// MANIFEST GENERATOR
+// ============================================
+
+function generateManifest(
+  course: GeneratedCourse,
+  resources: Array<{ id: string; type: string; href: string; files: string[] }>
+): string {
+  // Build organization items (modules and their items)
+  let orgItems = "";
+
+  for (const mod of course.modules) {
+    const moduleId = `mod_${mod.id}`;
+    let modItems = "";
+
+    for (const item of mod.items) {
+      const itemId = `item_${mod.id}_${item.id}`;
+      const resource = resources.find((r) => r.id.includes(item.id));
+
+      modItems += `
+          <item identifier="${itemId}" identifierref="${resource?.id || ""}">
+            <title>${escapeXml(item.title)}</title>
+          </item>`;
+    }
+
+    orgItems += `
+        <item identifier="${moduleId}">
+          <title>${escapeXml(mod.name)}</title>${modItems}
+        </item>`;
+  }
+
+  // Build resources section
+  const resourcesXml = resources
+    .map((r) => {
+      const files = r.files.map((f) => `\n      <file href="${f}"/>`).join("");
+      return `
+    <resource identifier="${r.id}" type="${r.type}" href="${r.href}">${files}
+    </resource>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="course_${generateId()}"
+  xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1"
+  xmlns:lom="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource"
+  xmlns:lomimscc="http://ltsc.ieee.org/xsd/imsccv1p1/LOM/manifest"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1 http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_imscp_v1p2_v1p0.xsd http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lomresource_v1p0.xsd http://ltsc.ieee.org/xsd/imsccv1p1/LOM/manifest http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lommanifest_v1p0.xsd">
+  <metadata>
+    <schema>IMS Common Cartridge</schema>
+    <schemaversion>1.1.0</schemaversion>
+    <lomimscc:lom>
+      <lomimscc:general>
+        <lomimscc:title>
+          <lomimscc:string>${escapeXml(course.title)}</lomimscc:string>
+        </lomimscc:title>
+        <lomimscc:description>
+          <lomimscc:string>${escapeXml(course.description)}</lomimscc:string>
+        </lomimscc:description>
+      </lomimscc:general>
+      <lomimscc:lifeCycle>
+        <lomimscc:contribute>
+          <lomimscc:date>
+            <lomimscc:dateTime>${new Date().toISOString().split("T")[0]}</lomimscc:dateTime>
+          </lomimscc:date>
+        </lomimscc:contribute>
+      </lomimscc:lifeCycle>
+    </lomimscc:lom>
+  </metadata>
+  <organizations>
+    <organization identifier="org_1" structure="rooted-hierarchy">
+      <item identifier="LearningModules">${orgItems}
+      </item>
+    </organization>
+  </organizations>
+  <resources>${resourcesXml}
+  </resources>
+</manifest>`;
+}
+
+// ============================================
+// MAIN EXPORT FUNCTION
+// ============================================
+
 export async function exportToIMSCC(course: GeneratedCourse): Promise<Blob> {
   const zip = new JSZip();
+  const resources: Array<{ id: string; type: string; href: string; files: string[] }> = [];
+  const itemRefs = new Map<string, string>();
 
-  // Add manifest
-  zip.file("imsmanifest.xml", generateManifest(course));
+  // Initialize context
+  const ctx: ExportContext = {
+    rubrics: new Map(),
+    assignmentGroupId: generateId(),
+  };
 
-  // Add course overview / welcome page
-  zip.file(
-    "course_overview.html",
-    generatePageHtml("Welcome", course.welcomeMessage || "<p>Welcome to the course!</p>")
-  );
+  // Create course_settings folder
+  const courseSettings = zip.folder("course_settings");
 
-  // Create folders
-  const assignmentsFolder = zip.folder("assignments");
-  const discussionsFolder = zip.folder("discussions");
-  const quizzesFolder = zip.folder("quizzes");
+  // Create wiki_content folder for pages
+  const wikiContent = zip.folder("wiki_content");
 
-  // Process modules and items
-  for (const courseModule of course.modules) {
-    for (const item of courseModule.items) {
-      switch (item.type) {
-        case "page":
-          zip.file(
-            `${item.id}.html`,
-            generatePageHtml(item.title, item.content || "")
-          );
-          break;
-
-        case "assignment":
-          assignmentsFolder?.file(`${item.id}.html`, generateAssignmentHtml(item));
-          break;
-
-        case "discussion":
-          discussionsFolder?.file(`${item.id}.html`, generateDiscussionHtml(item));
-          break;
-
-        case "quiz":
-          quizzesFolder?.file(`${item.id}.xml`, generateQuizQti(item));
-          break;
-
-        default:
-          // Default to page
-          zip.file(
-            `${item.id}.html`,
-            generatePageHtml(item.title, item.content || "")
-          );
+  // First pass: collect rubrics from assignments
+  for (const mod of course.modules) {
+    for (const item of mod.items) {
+      if (item.type === "assignment" && item.rubric) {
+        const rubricId = generateId();
+        ctx.rubrics.set(item.id, { id: rubricId, rubric: item.rubric, itemId: item.id });
       }
     }
   }
+
+  // Process each module and item
+  for (const mod of course.modules) {
+    for (const item of mod.items) {
+      const resourceId = generateId();
+      itemRefs.set(item.id, resourceId);
+
+      switch (item.type) {
+        case "page": {
+          // Pages go in wiki_content folder
+          const pageSlug = slugify(item.title);
+          const pageFile = `${pageSlug}.html`;
+          wikiContent?.file(pageFile, generateWikiPageHtml(item));
+
+          resources.push({
+            id: resourceId,
+            type: "webcontent",
+            href: `wiki_content/${pageFile}`,
+            files: [`wiki_content/${pageFile}`],
+          });
+          break;
+        }
+
+        case "discussion": {
+          // Discussions are XML files at root level
+          const discussionFile = `${resourceId}.xml`;
+          zip.file(discussionFile, generateDiscussionTopicXml(item));
+
+          resources.push({
+            id: resourceId,
+            type: "imsdt_xmlv1p1",
+            href: discussionFile,
+            files: [discussionFile],
+          });
+          break;
+        }
+
+        case "assignment": {
+          // Assignments get their own folder
+          const assignmentFolder = zip.folder(resourceId);
+          const assignmentSlug = slugify(item.title);
+          const htmlFile = `${assignmentSlug}.html`;
+
+          assignmentFolder?.file("assignment_settings.xml", generateAssignmentSettingsXml(item, resourceId, ctx));
+          assignmentFolder?.file(htmlFile, generateAssignmentHtml(item));
+
+          resources.push({
+            id: resourceId,
+            type: "associatedcontent/imscc_xmlv1p1/learning-application-resource",
+            href: `${resourceId}/assignment_settings.xml`,
+            files: [
+              `${resourceId}/assignment_settings.xml`,
+              `${resourceId}/${htmlFile}`,
+            ],
+          });
+          break;
+        }
+
+        case "quiz": {
+          // Quizzes get their own folder
+          const quizFolder = zip.folder(resourceId);
+
+          quizFolder?.file("assessment_meta.xml", generateQuizMetaXml(item, resourceId, ctx));
+          quizFolder?.file("assessment_qti.xml", generateQuizQtiXml(item, resourceId));
+
+          resources.push({
+            id: resourceId,
+            type: "imsqti_xmlv1p2/imscc_xmlv1p1/assessment",
+            href: `${resourceId}/assessment_meta.xml`,
+            files: [
+              `${resourceId}/assessment_meta.xml`,
+              `${resourceId}/assessment_qti.xml`,
+            ],
+          });
+          break;
+        }
+
+        default: {
+          // Default to page
+          const pageSlug = slugify(item.title);
+          const pageFile = `${pageSlug}.html`;
+          wikiContent?.file(pageFile, generateWikiPageHtml(item));
+
+          resources.push({
+            id: resourceId,
+            type: "webcontent",
+            href: `wiki_content/${pageFile}`,
+            files: [`wiki_content/${pageFile}`],
+          });
+        }
+      }
+    }
+  }
+
+  // Add welcome page
+  const welcomeSlug = "course-welcome";
+  wikiContent?.file(`${welcomeSlug}.html`, `<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Welcome</title>
+</head>
+<body>
+${course.welcomeMessage || "<h1>Welcome to the Course!</h1><p>Get started by exploring the modules below.</p>"}
+</body>
+</html>`);
+
+  // Generate course_settings files
+  courseSettings?.file("module_meta.xml", generateModuleMeta(course, itemRefs));
+  courseSettings?.file("rubrics.xml", generateRubricsXml(ctx));
+  courseSettings?.file("assignment_groups.xml", generateAssignmentGroupsXml(ctx));
+  courseSettings?.file("course_settings.xml", generateCourseSettingsXml(course));
+  courseSettings?.file("canvas_export.txt", `Canvas course export\nGenerated: ${new Date().toISOString()}`);
+
+  // Generate manifest
+  zip.file("imsmanifest.xml", generateManifest(course, resources));
 
   // Generate the zip file
   return await zip.generateAsync({ type: "blob" });
