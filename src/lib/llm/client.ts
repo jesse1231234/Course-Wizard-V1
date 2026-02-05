@@ -133,9 +133,16 @@ export async function generateJSONResponse<T>(
 
     return JSON.parse(cleanedResponse) as T;
   } catch (error) {
-    // Log first 500 chars for debugging
+    // Log for debugging
     console.error("Failed to parse LLM response as JSON. First 500 chars:", response.slice(0, 500));
-    console.error("Last 500 chars:", response.slice(-500));
-    throw new Error(`LLM response was not valid JSON. Response started with: "${response.slice(0, 100)}..."`);
+    console.error("Last 100 chars:", response.slice(-100));
+
+    // Check if response appears truncated (starts with { but doesn't end with })
+    const trimmed = response.trim();
+    if (trimmed.startsWith("{") && !trimmed.endsWith("}")) {
+      throw new Error("LLM response was truncated (incomplete JSON). The response may be too long. Try simplifying your course structure or reducing the number of modules.");
+    }
+
+    throw new Error(`LLM response was not valid JSON. Response started with: "${response.slice(0, 100)}..." and ended with: "...${response.slice(-50)}"`);
   }
 }
