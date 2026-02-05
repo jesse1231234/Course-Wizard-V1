@@ -103,15 +103,16 @@ export async function generateJSONResponse<T>(
   const lastMessage = jsonMessages[jsonMessages.length - 1];
 
   if (lastMessage && lastMessage.role === "user") {
-    lastMessage.content += "\n\nRespond with valid JSON only. No markdown, no explanation, just the JSON object.";
+    lastMessage.content += "\n\nIMPORTANT: Respond with valid JSON only. No markdown code blocks, no explanation, no text before or after - just the raw JSON object starting with { and ending with }.";
   }
 
   const response = await generateLLMResponse(jsonMessages, options);
 
   // Try to parse the response as JSON
   try {
-    // Remove potential markdown code blocks
     let cleanedResponse = response.trim();
+
+    // Remove markdown code blocks
     if (cleanedResponse.startsWith("```json")) {
       cleanedResponse = cleanedResponse.slice(7);
     } else if (cleanedResponse.startsWith("```")) {
@@ -122,9 +123,19 @@ export async function generateJSONResponse<T>(
     }
     cleanedResponse = cleanedResponse.trim();
 
+    // Try to extract JSON object from the response if it has surrounding text
+    const jsonStartIndex = cleanedResponse.indexOf("{");
+    const jsonEndIndex = cleanedResponse.lastIndexOf("}");
+
+    if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+      cleanedResponse = cleanedResponse.slice(jsonStartIndex, jsonEndIndex + 1);
+    }
+
     return JSON.parse(cleanedResponse) as T;
   } catch (error) {
-    console.error("Failed to parse LLM response as JSON:", response);
-    throw new Error("LLM response was not valid JSON");
+    // Log first 500 chars for debugging
+    console.error("Failed to parse LLM response as JSON. First 500 chars:", response.slice(0, 500));
+    console.error("Last 500 chars:", response.slice(-500));
+    throw new Error(`LLM response was not valid JSON. Response started with: "${response.slice(0, 100)}..."`);
   }
 }
